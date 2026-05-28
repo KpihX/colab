@@ -15,7 +15,7 @@ UV     := $(shell command -v uv 2>/dev/null || echo uv)
 PYTHON := $(UV) run python
 PYTEST := $(PYTHON) -m pytest
 
-.PHONY: help uv-audit uv-format uv-fix uv-compile uv-test uv-check uv-install uv-link uv-unlink uv-uninstall git-init-hooks git-commit git-tag git-push uv-build audit check
+.PHONY: help uv-audit uv-format uv-fix uv-compile uv-test uv-check uv-install uv-link uv-unlink uv-uninstall git-init-hooks git-add git-commit git-tag git-push push uv-build audit check
 
 help: ## Show help
 	@grep -E '^[a-zA-Z_-]+:.*?##' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -74,11 +74,6 @@ git-init-hooks: ## Install git pre-commit hook (make uv-check)
 	@echo "#!/bin/sh\nmake uv-check" > .git/hooks/pre-commit
 	@chmod +x .git/hooks/pre-commit
 	@echo "✅ Pre-commit hook installed."
-
-git-commit: uv-check ## Commit (requires msg="...")
-	@if [ -z "$(msg)" ]; then echo "❌ Use: make git-commit msg=\"...\""; exit 1; fi
-	@git add .
-	@git commit -m "$(msg)"
 
 git-tag: ## Tag from pyproject version
 	@git tag -a v$(VERSION) -m "Release v$(VERSION)"
