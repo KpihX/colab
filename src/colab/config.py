@@ -89,10 +89,10 @@ def get_secret(name: str) -> str:
 def get_agent_binary() -> str:
     agents = load_config().get("agents", {})
     default = agents.get("default", {})
-    binary = default.get("binary", "~/.local/bin/agent")
+    binary = default.get("binary", "~/.opencode/bin/opencode")
     return _expand_path(binary)
 
 
 def get_tmux_target() -> tuple[str, str]:
     tmux = load_config().get("tmux", {})
-    return tmux.get("session", "default"), tmux.get("window", "cursor")
+    return tmux.get("session", "default"), tmux.get("window", "opencode-agent")

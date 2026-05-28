@@ -70,7 +70,15 @@ class AcpSession:
         )
         logger.debug("ACP initialize: %s", list(init_result.keys()))
 
-        await self._client.request("authenticate", {"methodId": "cursor_login"})
+        auth_methods = init_result.get("authMethods")
+        if isinstance(auth_methods, list) and auth_methods:
+            method_id = str(auth_methods[0].get("id", "opencode-login"))
+        else:
+            method_id = str(init_result.get("authMethod", "cursor_login"))
+        try:
+            await self._client.request("authenticate", {"methodId": method_id})
+        except AcpError as exc:
+            logger.warning("ACP authenticate failed (%s); continuing without auth", exc)
 
         session_result = await self._client.request(
             "session/new",
@@ -97,8 +105,14 @@ class AcpSession:
         initial_timeout_s: float | None = 10.0,
         idle_timeout_s: float | None = 5.0,
         max_turn_time_s: float | None = 120.0,
+        drain_grace_s: float = 0.5,
     ) -> AsyncIterator[AgentChunk]:
-        """session/prompt + stream session/update until done — async generator."""
+        """session/prompt + stream session/update until done — async generator.
+
+        drain_grace_s: keep polling for deferred notifications after the request
+            completes (OpenCode sends session/update notifications after the
+            session/prompt response; Cursor sends them during).
+        """
         if not self.connected:
             raise AcpError("Not connected — call connect() first")
 
@@ -115,9 +129,14 @@ class AcpSession:
         saw_any_chunk = False
         cancelled_by_guard = False
         yielded_final = False
+        grace_start: float | None = None
 
         try:
-            while not request_task.done() or self._client.has_pending_notifications():
+            while (
+                not request_task.done()
+                or self._client.has_pending_notifications()
+                or grace_start is not None
+            ):
                 if self._cancelled:
                     self._cancelled = False
                     cancelled_by_guard = True
@@ -126,8 +145,18 @@ class AcpSession:
 
                 try:
                     msg = await asyncio.wait_for(self._client._notifications.get(), timeout=0.1)
+                    grace_start = None  # activity resets grace timer
                 except TimeoutError:
                     now = time.monotonic()
+
+                    if request_task.done() and not self._client.has_pending_notifications():
+                        if grace_start is None:
+                            grace_start = now
+                            continue
+                        if now - grace_start >= drain_grace_s:
+                            break
+                        continue
+
                     if (
                         initial_timeout_s is not None
                         and not saw_any_chunk
@@ -163,9 +192,6 @@ class AcpSession:
                             )
                             await self._cancel()
                             cancelled_by_guard = True
-                        break
-
-                    if request_task.done() and not self._client.has_pending_notifications():
                         break
                     continue
 

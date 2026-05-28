@@ -13,17 +13,24 @@ mistral:
 
 agents:
   default:
+    name: opencode
+    binary: "~/.opencode/bin/opencode"
+    acp_args: ["acp"]
+    mode: agent
+    cwd: "~"
+    permission_policy: allow-once  # allow-once | allow-always | reject-once | prompt
+  cursor:
     name: cursor
     binary: "~/.local/bin/agent"
     acp_args: ["acp"]
     mode: agent
     cwd: "~"
-    permission_policy: allow-once  # allow-once | allow-always | reject-once | prompt
+    permission_policy: allow-once
 
 tmux:
   session: default
-  window: cursor-agent
-  launch_cmd: agent
+  window: opencode-agent
+  launch_cmd: opencode
   attach_hint: true
 
 router:
