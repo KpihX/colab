@@ -1,0 +1,21 @@
+# Python / uv
+.venv/
+dist/
+*.egg-info/
+__pycache__/
+*.py[cod]
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Secrets & local config
+.env*
+!.env.example
+
+# Runtime data
+*.log
+
+# IDE
+.idea/
+.vscode/

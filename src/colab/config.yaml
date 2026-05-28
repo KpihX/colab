@@ -1,0 +1,83 @@
+# colab runtime defaults (non-secret)
+# User overrides: ~/.colab/config.yaml
+
+schema_version: colab.config.v1
+
+mistral:
+  api_key_env: MISTRAL_API_KEY
+  router_model: mistral-small-latest
+  stt_model: voxtral-mini-transcribe-realtime-2602
+  tts_model: voxtral-mini-tts-2603
+  tts_voice_slug: fr_marie_neutral
+  # tts_voice_id: optional explicit UUID override
+
+agents:
+  default:
+    name: cursor
+    binary: "~/.local/bin/agent"
+    acp_args: ["acp"]
+    mode: agent
+    cwd: "~"
+    permission_policy: allow-once  # allow-once | allow-always | reject-once | prompt
+
+tmux:
+  session: default
+  window: cursor-agent
+  launch_cmd: agent
+  attach_hint: true
+
+router:
+  min_confidence_delegate: 0.55
+  voice_prompt_wrapper: |
+    [VOICE_INPUT channel=colab]
+    The user spoke (STT transcript, may contain errors).
+    Reply concisely for spoken output (short sentences, minimal markdown).
+    Transcript: «{transcript}»
+    [/VOICE_INPUT]
+
+audio:
+  # Set true + `uv sync --extra audio` for `colab listen`
+  enabled: false
+  sample_rate: 16000
+  chunk_duration_ms: 30
+  speech_threshold: 450.0
+  silence_ms: 900
+  min_speech_ms: 250
+  max_utterance_s: 30.0
+  target_streaming_delay_ms: 480
+  barge_in_ms: 400
+  tts_enabled: true
+  tts_sample_rate: 24000
+  vad: energy
+
+queue:
+  enabled: true
+  max_size: 10
+
+paths:
+  data_dir: "~/.colab"
+  glossary_file: "~/.colab/glossary.yaml"
+
+meta_actions_fallback:
+  - id: session.clear
+    description: Clear conversation context / new topic
+    labels:
+      - clear
+      - nouveau chat
+      - changeons de sujet
+      - new chat
+    delivery: tmux_send_keys
+    payload:
+      keys: "/clear"
+      enter: true
+  - id: session.stop
+    description: Stop current agent generation
+    labels:
+      - stop
+      - arrête
+      - annule
+      - cancel
+    delivery: tmux_send_keys
+    payload:
+      keys: "C-c"
+      enter: false

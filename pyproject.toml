@@ -1,0 +1,56 @@
+[project]
+name = "colab"
+version = "0.1.0"
+description = "Voice orchestrator: Mistral router + ACP agents + tmux visual session"
+readme = "README.md"
+authors = [{ name = "KAMDEM Ivann", email = "kapoivha@gmail.com" }]
+license = { text = "MIT" }
+requires-python = ">=3.12"
+
+dependencies = [
+    "httpx>=0.28.1",
+    "pydantic>=2.10.6",
+    "pyyaml>=6.0.1",
+    "python-dotenv>=1.0.0",
+    "rich>=13.9.4",
+    "typer>=0.15.1",
+]
+
+[project.optional-dependencies]
+audio = [
+    "mistralai[realtime]>=1.9.0",
+    "PyAudio>=0.2.14",
+]
+
+[project.scripts]
+colab = "colab.cli:app"
+
+[tool.uv]
+package = true
+
+[build-system]
+requires = ["uv_build>=0.10.3,<0.11.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "colab"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.0.2",
+    "pytest-asyncio>=0.23.5",
+    "pytest-cov>=7.0.0",
+    "ruff>=0.9.0",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+asyncio_mode = "auto"
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
