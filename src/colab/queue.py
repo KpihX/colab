@@ -17,6 +17,7 @@ class QueuedPrompt:
     prompt_text: str
     source_transcript: str
     enqueued_at: float
+    agent_name: str = "default"
 
 
 class PromptQueue:
@@ -33,7 +34,9 @@ class PromptQueue:
     def new_turn_id(cls) -> str:
         return f"turn-{next(cls._counter)}"
 
-    def enqueue(self, prompt_text: str, source_transcript: str) -> str | None:
+    def enqueue(
+        self, prompt_text: str, source_transcript: str, agent_name: str = "default"
+    ) -> str | None:
         """Append prompt. Returns turn_id or None if queue is full."""
         with self._lock:
             if len(self._items) >= self._max_size:
@@ -45,6 +48,7 @@ class PromptQueue:
                     prompt_text=prompt_text,
                     source_transcript=source_transcript,
                     enqueued_at=time.monotonic(),
+                    agent_name=agent_name,
                 )
             )
             return turn_id

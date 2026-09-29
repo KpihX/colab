@@ -1,7 +1,8 @@
 """Full voice E2E soak tests — mocked audio, real dispatch.
 
 Exercises:
-- handle_text for all 4 intents (SIMPLE_REPLY, META_ACTION, DELEGATE_AGENT, STOP_AGENT)
+- handle_text for all 5 intents (SIMPLE_REPLY, COMMAND_AGENT, META_ACTION,
+  DELEGATE_AGENT, STOP_AGENT)
 - _speak_with_barge_in with mocked player
 - Multi-iteration soak (N rounds of SIMPLE_REPLY)
 - All intents in sequence with state verification
@@ -51,7 +52,6 @@ class TestHandleTextSimpleReply:
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         reset_runtime()
-        monkeypatch.setattr("colab.orchestrator._prepare_visual", lambda: None)
         monkeypatch.setattr("colab.orchestrator.load_catalog", lambda: _catalog())
 
     def test_returns_simple_reply_text(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -98,22 +98,21 @@ class TestHandleTextSimpleReply:
 
 
 # ---------------------------------------------------------------------------
-# handle_text — META_ACTION
+# handle_text — COMMAND_AGENT (commands sent TO the agent)
 # ---------------------------------------------------------------------------
 
 
-class TestHandleTextMetaAction:
+class TestHandleTextCommandAgent:
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         reset_runtime()
-        monkeypatch.setattr("colab.orchestrator._prepare_visual", lambda: None)
         monkeypatch.setattr("colab.orchestrator.load_catalog", lambda: _catalog())
 
-    def test_executes_meta_action(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_executes_command_agent(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
             "colab.orchestrator.route_transcript",
             lambda _t, _c: RouterDecision(
-                intent=RouterIntent.META_ACTION,
+                intent=RouterIntent.COMMAND_AGENT,
                 confidence=0.9,
                 meta_action_id="session.clear",
                 reasoning_short="user wants new topic",
@@ -130,6 +129,56 @@ class TestHandleTextMetaAction:
 
 
 # ---------------------------------------------------------------------------
+# handle_text — META_ACTION (colab-external actions)
+# ---------------------------------------------------------------------------
+
+
+class TestHandleTextMetaAction:
+    @pytest.fixture(autouse=True)
+    def _setup(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        reset_runtime()
+        monkeypatch.setattr("colab.orchestrator.load_catalog", lambda: _catalog())
+
+    def test_executes_meta_action_handler(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "colab.orchestrator.route_transcript",
+            lambda _t, _c: RouterDecision(
+                intent=RouterIntent.META_ACTION,
+                confidence=0.9,
+                meta_action_id="launch-visual",
+                reasoning_short="user wants visual",
+            ),
+        )
+        calls: list[str] = []
+
+        async def _mock_execute(action_id, transcript):
+            calls.append(action_id)
+
+        monkeypatch.setattr("colab.meta_actions.execute", _mock_execute)
+        speeches = asyncio.run(handle_text("show me the agent"))
+        assert speeches == []
+        assert calls == ["launch-visual"]
+
+    def test_meta_action_returns_speech(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            "colab.orchestrator.route_transcript",
+            lambda _t, _c: RouterDecision(
+                intent=RouterIntent.META_ACTION,
+                confidence=0.9,
+                meta_action_id="launch-visual",
+                reasoning_short="user wants visual",
+            ),
+        )
+
+        async def _mock_execute(action_id, transcript):
+            return f"Launched {action_id}"
+
+        monkeypatch.setattr("colab.meta_actions.execute", _mock_execute)
+        speeches = asyncio.run(handle_text("show me"))
+        assert speeches == ["Launched launch-visual"]
+
+
+# ---------------------------------------------------------------------------
 # handle_text — STOP_AGENT
 # ---------------------------------------------------------------------------
 
@@ -138,7 +187,6 @@ class TestHandleTextStopAgent:
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         reset_runtime()
-        monkeypatch.setattr("colab.orchestrator._prepare_visual", lambda: None)
         monkeypatch.setattr("colab.orchestrator.load_catalog", lambda: _catalog())
         monkeypatch.setattr("colab.audio.tts.stop_speaking", lambda: None)
 
@@ -172,7 +220,6 @@ class TestHandleTextDelegate:
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         reset_runtime()
-        monkeypatch.setattr("colab.orchestrator._prepare_visual", lambda: None)
         monkeypatch.setattr("colab.orchestrator.load_catalog", lambda: _catalog())
 
     async def test_delegates_when_idle(self, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -198,7 +245,9 @@ class TestHandleTextDelegate:
         monkeypatch.setattr("colab.orchestrator._run_agent_prompt", _mock_run)
 
         speeches = await handle_text("write tests")
-        assert speeches == ["out:write tests"]
+        assert len(speeches) == 2
+        assert speeches[0] == "Je lance l'agent default pour traiter votre demande."
+        assert speeches[1] == "out:write tests"
         assert runtime.busy is False
 
 
@@ -251,16 +300,15 @@ class TestSpeakWithBargeIn:
 
 
 class TestSoakAllIntents:
-    """Sequences through all 4 intents to verify state machine stability."""
+    """Sequences through all intents to verify state machine stability."""
 
     @pytest.fixture(autouse=True)
     def _setup(self, monkeypatch: pytest.MonkeyPatch) -> None:
         reset_runtime()
-        monkeypatch.setattr("colab.orchestrator._prepare_visual", lambda: None)
         monkeypatch.setattr("colab.orchestrator.load_catalog", lambda: _catalog())
         monkeypatch.setattr("colab.audio.tts.stop_speaking", lambda: None)
 
-    async def test_sequence_simple_meta_stop(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    async def test_sequence_simple_command_stop(self, monkeypatch: pytest.MonkeyPatch) -> None:
         runtime = get_runtime()
         transcripts: list[str] = []
         decisions = iter(
@@ -272,7 +320,7 @@ class TestSoakAllIntents:
                     reasoning_short="greeting",
                 ),
                 RouterDecision(
-                    intent=RouterIntent.META_ACTION,
+                    intent=RouterIntent.COMMAND_AGENT,
                     confidence=0.9,
                     meta_action_id="session.clear",
                     reasoning_short="new topic",
@@ -360,5 +408,66 @@ class TestSoakAllIntents:
         assert s2 == ["hi again"]
 
         s3 = await handle_text("c")
-        assert s3 == ["processed:do something"]
+        assert len(s3) == 2
+        assert s3[0] == "Je lance l'agent default pour traiter votre demande."
+        assert s3[1] == "processed:do something"
         assert runtime.busy is False
+
+    async def test_soak_meta_action_in_sequence(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Verify META_ACTION works between other intents."""
+        runtime = get_runtime()
+        decisions = iter(
+            [
+                RouterDecision(
+                    intent=RouterIntent.SIMPLE_REPLY,
+                    confidence=0.95,
+                    simple_reply="hello",
+                    reasoning_short="greeting",
+                ),
+                RouterDecision(
+                    intent=RouterIntent.META_ACTION,
+                    confidence=0.9,
+                    meta_action_id="launch-visual",
+                    reasoning_short="user wants visual",
+                ),
+                RouterDecision(
+                    intent=RouterIntent.META_ACTION,
+                    confidence=0.9,
+                    meta_action_id="close-visual",
+                    reasoning_short="user wants to hide",
+                ),
+                RouterDecision(
+                    intent=RouterIntent.STOP_AGENT,
+                    confidence=0.98,
+                    reasoning_short="user stop",
+                ),
+            ]
+        )
+
+        def _route(transcript: str, _catalog: MetaCatalog) -> RouterDecision:
+            return next(decisions)
+
+        monkeypatch.setattr("colab.orchestrator.route_transcript", _route)
+        meta_calls: list[str] = []
+
+        async def _mock_execute(action_id, transcript):
+            meta_calls.append(action_id)
+
+        monkeypatch.setattr("colab.meta_actions.execute", _mock_execute)
+        stop_calls: list[str] = []
+        monkeypatch.setattr(runtime, "stop_agent", lambda catalog: stop_calls.append("stop"))
+        _ = stop_calls
+
+        s1 = await handle_text("hello")
+        assert s1 == ["hello"]
+
+        s2 = await handle_text("show me")
+        assert s2 == []
+        assert meta_calls == ["launch-visual"]
+
+        s3 = await handle_text("hide")
+        assert s3 == []
+        assert meta_calls == ["launch-visual", "close-visual"]
+
+        s4 = await handle_text("stop")
+        assert s4 == []

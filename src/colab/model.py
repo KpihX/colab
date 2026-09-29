@@ -14,8 +14,9 @@ class StrictModel(BaseModel):
 
 class RouterIntent(StrEnum):
     SIMPLE_REPLY = "simple_reply"
-    META_ACTION = "meta_action"
+    COMMAND_AGENT = "command_agent"
     DELEGATE_AGENT = "delegate_agent"
+    META_ACTION = "meta_action"
     STOP_AGENT = "stop_agent"
 
 
@@ -27,6 +28,7 @@ class RouterDecision(StrictModel):
     simple_reply: str | None = None
     meta_action_id: str | None = None
     agent_prompt: str | None = None
+    agent_name: str | None = None
     reasoning_short: str | None = None
 
 

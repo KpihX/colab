@@ -63,8 +63,10 @@ class AgentRuntime:
             self._busy = False
             self._active_turn_id = None
 
-    def enqueue_delegate(self, prompt_text: str, source_transcript: str) -> str | None:
-        return self._queue.enqueue(prompt_text, source_transcript)
+    def enqueue_delegate(
+        self, prompt_text: str, source_transcript: str, agent_name: str = "default"
+    ) -> str | None:
+        return self._queue.enqueue(prompt_text, source_transcript, agent_name)
 
     def pop_queued(self) -> QueuedPrompt | None:
         return self._queue.pop()

@@ -40,7 +40,6 @@ async def test_handle_text_queues_when_busy(monkeypatch) -> None:
     runtime = get_runtime()
     runtime.try_begin_turn()
 
-    monkeypatch.setattr("colab.orchestrator._prepare_visual", lambda: None)
     monkeypatch.setattr("colab.orchestrator.load_catalog", lambda: _catalog())
     monkeypatch.setattr(
         "colab.orchestrator.route_transcript",
@@ -65,7 +64,6 @@ async def test_handle_text_delegate_drains_queue_fifo(monkeypatch) -> None:
     runtime.enqueue_delegate("queued-1", "first")
     runtime.enqueue_delegate("queued-2", "second")
 
-    monkeypatch.setattr("colab.orchestrator._prepare_visual", lambda: None)
     monkeypatch.setattr("colab.orchestrator.load_catalog", lambda: _catalog())
     monkeypatch.setattr(
         "colab.orchestrator.route_transcript",
@@ -84,7 +82,14 @@ async def test_handle_text_delegate_drains_queue_fifo(monkeypatch) -> None:
 
     speeches = await handle_text("hello")
 
-    assert speeches == ["out:live", "out:queued-1", "out:queued-2"]
+    assert speeches == [
+        "Je lance l'agent default pour traiter votre demande.",
+        "out:live",
+        "Je lance l'agent default pour traiter votre demande.",
+        "out:queued-1",
+        "Je lance l'agent default pour traiter votre demande.",
+        "out:queued-2",
+    ]
     assert runtime.queue_depth() == 0
     assert runtime.busy is False
 
@@ -108,7 +113,6 @@ async def test_soak_delegate_fifo_during_long_turn(monkeypatch) -> None:
 
     gate = asyncio.Event()
 
-    monkeypatch.setattr("colab.orchestrator._prepare_visual", lambda: None)
     monkeypatch.setattr("colab.orchestrator.load_catalog", lambda: _catalog())
     monkeypatch.setattr(
         "colab.orchestrator.route_transcript",
@@ -149,7 +153,14 @@ async def test_soak_delegate_fifo_during_long_turn(monkeypatch) -> None:
     results_t1 = await t1_task
 
     assert runtime.queue_depth() == 0
-    assert results_t1 == ["out:p:t1", "out:p:t2", "out:p:t3"]
+    assert results_t1 == [
+        "Je lance l'agent default pour traiter votre demande.",
+        "out:p:t1",
+        "Je lance l'agent default pour traiter votre demande.",
+        "out:p:t2",
+        "Je lance l'agent default pour traiter votre demande.",
+        "out:p:t3",
+    ]
 
 
 async def test_soak_stop_flushes_queue_during_long_turn(monkeypatch) -> None:
@@ -199,7 +210,6 @@ async def test_soak_stop_flushes_queue_during_long_turn(monkeypatch) -> None:
             )
         raise AssertionError(f"Unexpected transcript: {transcript}")
 
-    monkeypatch.setattr("colab.orchestrator._prepare_visual", lambda: None)
     monkeypatch.setattr("colab.orchestrator.load_catalog", lambda: _catalog())
     monkeypatch.setattr("colab.orchestrator.route_transcript", _route)
 
@@ -233,5 +243,8 @@ async def test_soak_stop_flushes_queue_during_long_turn(monkeypatch) -> None:
     gate.set()
     results_t1 = await t1_task
 
-    assert results_t1 == ["out:p:t1"]
+    assert results_t1 == [
+        "Je lance l'agent default pour traiter votre demande.",
+        "out:p:t1",
+    ]
     assert stop_calls.count("session.stop") == 1

@@ -24,15 +24,15 @@ help: ## Show help
 
 uv-audit: ## Run linting and style checks (Ruff)
 	@echo "🔍 Running static analysis on $(PKG_DIR)..."
-	@$(UV) run ruff check $(PKG_DIR) tests/
+	@ruff check $(PKG_DIR) tests/
 
 uv-format: ## Auto-format code (Ruff)
 	@echo "🎨 Formatting code..."
-	@$(UV) run ruff format $(PKG_DIR) tests/
+	@ruff format $(PKG_DIR) tests/
 
 uv-fix: ## Auto-fix linting issues (Ruff)
 	@echo "🛠️ Auto-fixing issues..."
-	@$(UV) run ruff check --fix $(PKG_DIR) tests/
+	@ruff check --fix $(PKG_DIR) tests/
 
 uv-compile: ## Verify Python syntax compilation
 	@echo "⚙️ Compiling source files..."

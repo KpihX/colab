@@ -9,6 +9,7 @@ import signal
 
 from rich.console import Console
 
+from colab import meta_actions as colab_meta_actions
 from colab.acp.meta import discover_meta_actions, execute_meta_action, load_catalog
 from colab.acp.session import AcpSession
 from colab.audio.tts import listen_tts_enabled
@@ -17,29 +18,20 @@ from colab.exceptions import AudioNotReadyError
 from colab.model import RouterIntent
 from colab.router.mistral import route_transcript
 from colab.runtime import get_runtime, reset_runtime
-from colab.tmux.pane import attach_hint, ensure_pane
 
 logger = logging.getLogger(__name__)
 console = Console()
 
 _PROMPT_TIMEOUTS = {
-    "initial_timeout_s": 12.0,
-    "idle_timeout_s": 3.0,
-    "max_turn_time_s": 120.0,
+    "initial_timeout_s": 30.0,
+    "idle_timeout_s": 5.0,
+    "max_turn_time_s": 180.0,
 }
-
-
-def _prepare_visual() -> None:
-    target = ensure_pane()
-    hint = attach_hint()
-    if hint:
-        console.print(f"[dim]Visual mirror:[/] [cyan]{hint}[/] (pane {target})")
 
 
 def run_listen() -> None:
     """Entry for `colab listen`. Uses mic when audio.enabled, else blocks with hint."""
     cfg = load_config()
-    _prepare_visual()
     binary = get_agent_binary()
     runtime = get_runtime()
 
@@ -135,7 +127,12 @@ async def _listen_loop() -> None:
             continue
 
         console.print("[dim]… waiting for speech[/]")
-        pcm = await vad.capture_utterance()
+        try:
+            pcm = await vad.capture_utterance()
+        except AudioNotReadyError as exc:
+            console.print(f"[red]Audio error:[/] {exc}")
+            console.print("[dim]Falling back to text mode — use `colab say <text>`[/]")
+            return
         if not pcm:
             continue
 
@@ -172,6 +169,11 @@ async def _run_agent_prompt(session: AcpSession, prompt_text: str) -> str:
     return "".join(parts).strip()
 
 
+def _delegate_feedback(agent_name: str) -> str:
+    """Vocal feedback spoken each time a delegated turn actually starts."""
+    return f"Je lance l'agent {agent_name} pour traiter votre demande."
+
+
 async def _drain_delegate_queue(runtime, session: AcpSession) -> list[str]:
     speeches: list[str] = []
     while True:
@@ -184,6 +186,9 @@ async def _drain_delegate_queue(runtime, session: AcpSession) -> list[str]:
             runtime.requeue_front(item)
             break
         console.print(f"[dim]queue[/] running {item.turn_id}")
+        feedback = _delegate_feedback(item.agent_name)
+        console.print(f"[cyan]{feedback}[/]")
+        speeches.append(feedback)
         try:
             out = await _run_agent_prompt(session, item.prompt_text)
             if out:
@@ -198,11 +203,15 @@ async def _delegate_with_queue(
     session: AcpSession,
     prompt_text: str,
     transcript: str,
+    agent_name: str = "default",
 ) -> list[str]:
     speeches: list[str] = []
     turn_id = runtime.try_begin_turn()
     if turn_id is not None:
         console.print(f"[dim]turn[/] {turn_id}")
+        feedback = _delegate_feedback(agent_name)
+        console.print(f"[cyan]{feedback}[/]")
+        speeches.append(feedback)
         try:
             out = await _run_agent_prompt(session, prompt_text)
             if out:
@@ -216,7 +225,7 @@ async def _delegate_with_queue(
         console.print("[red]agent busy — prompt dropped (queue disabled)[/]")
         return speeches
 
-    queued_id = runtime.enqueue_delegate(prompt_text, transcript)
+    queued_id = runtime.enqueue_delegate(prompt_text, transcript, agent_name)
     if queued_id is None:
         console.print("[red]queue full — prompt dropped[/]")
         return speeches
@@ -229,8 +238,6 @@ async def _delegate_with_queue(
 
 async def handle_text(transcript: str) -> list[str]:
     """Process one utterance. Returns texts to speak aloud (in order) — async."""
-    _prepare_visual()
-
     catalog = load_catalog() or discover_meta_actions(get_agent_binary())
     decision = route_transcript(transcript, catalog)
     runtime = get_runtime()
@@ -247,9 +254,16 @@ async def handle_text(transcript: str) -> list[str]:
         speeches.append(decision.simple_reply)
         return speeches
 
-    if decision.intent == RouterIntent.META_ACTION and decision.meta_action_id:
+    if decision.intent == RouterIntent.COMMAND_AGENT and decision.meta_action_id:
         execute_meta_action(decision.meta_action_id, catalog)
-        console.print(f"[green]meta[/] executed: {decision.meta_action_id}")
+        console.print(f"[green]command[/] sent to agent: {decision.meta_action_id}")
+        return speeches
+
+    if decision.intent == RouterIntent.META_ACTION and decision.meta_action_id:
+        out = await colab_meta_actions.execute(decision.meta_action_id, transcript)
+        if out:
+            speeches.append(out)
+        console.print(f"[green]meta action[/] {decision.meta_action_id}")
         return speeches
 
     if decision.intent == RouterIntent.STOP_AGENT:
@@ -260,13 +274,28 @@ async def handle_text(transcript: str) -> list[str]:
         if flushed:
             console.print(f"[dim]flushed {len(flushed)} queued prompt(s)[/]")
         runtime.stop_agent(catalog)
-        console.print("[red]stop[/] sent (ACP cancel + tmux C-c)")
+        cfg = load_config()
+        headless = cfg.get("agents", {}).get("default", {}).get("headless", False)
+        if headless:
+            console.print("[red]stop[/] sent (ACP cancel)")
+        else:
+            console.print("[red]stop[/] sent (ACP cancel + tmux C-c)")
         return speeches
 
     if decision.intent == RouterIntent.DELEGATE_AGENT:
         prompt_text = decision.agent_prompt or transcript
+        agent_name = decision.agent_name or "default"
+
+        # Lancer l'agent et capturer la réponse
         session = await runtime.ensure_connected()
-        speeches.extend(await _delegate_with_queue(runtime, session, prompt_text, transcript))
+        agent_responses = await _delegate_with_queue(
+            runtime, session, prompt_text, transcript, agent_name
+        )
+
+        # Ajouter la réponse de l'agent au TTS
+        if agent_responses:
+            speeches.extend(agent_responses)
+
         return speeches
 
     return speeches
